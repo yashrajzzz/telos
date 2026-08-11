@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Telos</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="grid-bg"></div>
+
+  <main class="wrap">
+
+    <!-- HERO: clock -->
+    <header class="hero">
+      <p class="greeting" id="greeting">// good morning, developer</p>
+      <div class="clock" id="clock">
+        <span id="clock-time">00:00<span class="cursor">:</span>00</span>
+      </div>
+      <p class="gitline" id="gitline">loading…</p>
+    </header>
+
+    <!-- PANELS -->
+    <section class="panels">
+
+      <!-- TODO -->
+      <div class="panel" id="panel-todo">
+        <div class="panel-head">
+          <span class="prompt">$ todo --list</span>
+          <span class="count" id="todo-count">0 open</span>
+        </div>
+        <form class="todo-form" id="todo-form" autocomplete="off">
+          <span class="chevron">&gt;</span>
+          <input type="text" id="todo-input" placeholder="add a task, hit enter" maxlength="140" />
+        </form>
+        <ul class="todo-list" id="todo-list"></ul>
+      </div>
+
+      <!-- SHORTCUTS -->
+      <div class="panel" id="panel-links">
+        <div class="panel-head">
+          <span class="prompt">~/shortcuts</span>
+          <button class="add-btn" id="link-add" title="add shortcut">+ new</button>
+        </div>
+        <div class="links-grid" id="links-grid"></div>
+      </div>
+
+      <!-- STICKY NOTES -->
+      <div class="panel" id="panel-notes">
+        <div class="panel-head">
+          <span class="prompt">// sticky-notes</span>
+          <button class="add-btn" id="note-add" title="add note">+ new</button>
+        </div>
+        <div class="notes-board" id="notes-board"></div>
+      </div>
+
+    </section>
+
+    <footer class="foot">
+      <span id="quote">// keep building</span>
+    </footer>
+
+  </main>
+
+  <!-- SHORTCUT EDIT/ADD MODAL -->
+  <div class="modal-overlay" id="link-modal-overlay">
+    <div class="modal" id="link-modal">
+      <p class="modal-title" id="link-modal-title">// new shortcut</p>
+      <label class="modal-label" for="link-name-input">shortcut name</label>
+      <input type="text" id="link-name-input" class="modal-input" placeholder="e.g. Figma" maxlength="40" />
+      <label class="modal-label" for="link-url-input">shortcut link</label>
+      <input type="text" id="link-url-input" class="modal-input" placeholder="e.g. figma.com" maxlength="200" />
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="link-modal-cancel">cancel</button>
+        <button class="modal-btn save" id="link-modal-save">save</button>
+      </div>
+    </div>
+  </div>
+
+<script src="script.js"></script>
+</body>
+</html>
