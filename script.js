@@ -37,27 +37,80 @@ const QUOTES = [
 document.getElementById('quote').textContent = '// ' + QUOTES[Math.floor(Math.random() * QUOTES.length)];
 
 
-/* ---------------- STORAGE HELPERS ---------------- */
+/* ---------------- SEARCH BAR ---------------- */
 
-function load(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (e) {
-    return fallback;
+document.getElementById('searchbar').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.getElementById('search-input');
+  const query = input.value.trim();
+  if (!query) return;
+  // if it looks like a URL, go straight there; otherwise search Google
+  const isUrl = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+.*$/i.test(query) && !query.includes(' ');
+  const dest = isUrl ? normalizeUrl(query) : `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  window.location.href = dest;
+});
+
+
+/* ---------------- STORAGE HELPERS ----------------
+   Uses chrome.storage.local instead of window.localStorage.
+   Why: Chrome pre-renders/caches New Tab page instances in the
+   background for speed. A page opened earlier can keep showing
+   stale data even after you've made changes elsewhere. chrome.storage
+   fixes this two ways: (1) it's the same store shared by every open
+   instance of this page, and (2) chrome.storage.onChanged fires a
+   live event in every open tab whenever data changes, so all open
+   tabs immediately re-render with the latest data — no stale caches,
+   no reload needed. Falls back to localStorage if chrome.storage is
+   ever unavailable (e.g. testing the raw HTML file outside Chrome). */
+
+const hasChromeStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+
+function storageGet(keys) {
+  if (hasChromeStorage) {
+    return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+  }
+  const result = {};
+  Object.keys(keys).forEach(k => {
+    try {
+      const raw = localStorage.getItem(k);
+      result[k] = raw ? JSON.parse(raw) : keys[k];
+    } catch (e) {
+      result[k] = keys[k];
+    }
+  });
+  return Promise.resolve(result);
+}
+
+function storageSet(key, value) {
+  if (hasChromeStorage) {
+    chrome.storage.local.set({ [key]: value });
+  } else {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
   }
 }
-function save(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
+
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
 
-/* ---------------- TODO LIST ---------------- */
+/* ---------------- STATE ---------------- */
 
-let todos = load('devdash_todos', []);
+let todos = [];
+let notes = [];
+let links = [];
+
+const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue'];
+const MAX_NOTES = 4;
+
+function backfillNoteColors() {
+  notes.forEach((note, i) => {
+    if (!note.color) note.color = NOTE_COLORS[i % NOTE_COLORS.length];
+  });
+}
+
+
+/* ---------------- TODO LIST ---------------- */
 
 function renderTodos() {
   const list = document.getElementById('todo-list');
@@ -78,7 +131,7 @@ function renderTodos() {
     box.className = 'box';
     box.addEventListener('click', () => {
       todo.done = !todo.done;
-      save('devdash_todos', todos);
+      storageSet('todos', todos);
       renderTodos();
     });
 
@@ -92,7 +145,7 @@ function renderTodos() {
     del.title = 'remove';
     del.addEventListener('click', () => {
       todos = todos.filter(t => t.id !== todo.id);
-      save('devdash_todos', todos);
+      storageSet('todos', todos);
       renderTodos();
     });
 
@@ -110,31 +163,24 @@ document.getElementById('todo-form').addEventListener('submit', e => {
   const text = input.value.trim();
   if (!text) return;
   todos.push({ id: uid(), text, done: false });
-  save('devdash_todos', todos);
+  storageSet('todos', todos);
   input.value = '';
   renderTodos();
 });
 
-renderTodos();
-
 
 /* ---------------- STICKY NOTES ---------------- */
-
-const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue'];
-const MAX_NOTES = 4;
-
-let notes = load('devdash_notes', [
-  { id: uid(), text: 'pin important stuff here', color: 'yellow' }
-]);
-
-// backfill colors for any notes saved before colors existed
-notes.forEach((note, i) => {
-  if (!note.color) note.color = NOTE_COLORS[i % NOTE_COLORS.length];
-});
 
 function renderNotes() {
   const board = document.getElementById('notes-board');
   board.innerHTML = '';
+
+  if (notes.length === 0) {
+    const hint = document.createElement('p');
+    hint.className = 'empty-hint';
+    hint.textContent = 'no notes yet — add one above';
+    board.appendChild(hint);
+  }
 
   notes.forEach(note => {
     const div = document.createElement('div');
@@ -149,7 +195,7 @@ function renderNotes() {
     textarea.maxLength = 240;
     textarea.addEventListener('input', () => {
       note.text = textarea.value;
-      save('devdash_notes', notes);
+      storageSet('notes', notes);
     });
 
     const del = document.createElement('button');
@@ -157,7 +203,7 @@ function renderNotes() {
     del.textContent = 'remove';
     del.addEventListener('click', () => {
       notes = notes.filter(n => n.id !== note.id);
-      save('devdash_notes', notes);
+      storageSet('notes', notes);
       renderNotes();
     });
 
@@ -172,27 +218,15 @@ function renderNotes() {
 
 document.getElementById('note-add').addEventListener('click', () => {
   if (notes.length >= MAX_NOTES) return;
-  // pick a color not currently in use where possible
   const usedColors = notes.map(n => n.color);
   const nextColor = NOTE_COLORS.find(c => !usedColors.includes(c)) || NOTE_COLORS[notes.length % NOTE_COLORS.length];
   notes.push({ id: uid(), text: '', color: nextColor });
-  save('devdash_notes', notes);
+  storageSet('notes', notes);
   renderNotes();
 });
 
-renderNotes();
-
 
 /* ---------------- SHORTCUTS ---------------- */
-
-let links = load('devdash_links', [
-  { id: uid(), label: 'GitHub', url: 'https://github.com' },
-  { id: uid(), label: 'Stack Overflow', url: 'https://stackoverflow.com' },
-  { id: uid(), label: 'MDN Docs', url: 'https://developer.mozilla.org' },
-  { id: uid(), label: 'DevDocs', url: 'https://devdocs.io' },
-  { id: uid(), label: 'Can I use', url: 'https://caniuse.com' },
-  { id: uid(), label: 'npm', url: 'https://www.npmjs.com' }
-]);
 
 function normalizeUrl(u) {
   if (!/^https?:\/\//i.test(u)) return 'https://' + u;
@@ -204,6 +238,9 @@ function closeAllMenus() {
   document.querySelectorAll('.menu-btn.open').forEach(b => b.classList.remove('open'));
 }
 
+/* ---- drag-to-reorder ---- */
+let draggedTile = null;
+
 function renderLinks() {
   const grid = document.getElementById('links-grid');
   grid.innerHTML = '';
@@ -212,6 +249,44 @@ function renderLinks() {
     const a = document.createElement('a');
     a.className = 'link-tile';
     a.href = link.url;
+    a.dataset.id = link.id;
+    a.draggable = true;
+
+    a.addEventListener('dragstart', (e) => {
+      draggedTile = a;
+      e.dataTransfer.effectAllowed = 'move';
+      // Firefox requires data to be set for drag to start
+      e.dataTransfer.setData('text/plain', link.id);
+      closeAllMenus();
+      // apply the visual state after the drag image is captured
+      requestAnimationFrame(() => a.classList.add('dragging'));
+    });
+
+    a.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (!draggedTile || draggedTile === a) return;
+      const rect = a.getBoundingClientRect();
+      const before = e.clientX - rect.left < rect.width / 2;
+      grid.insertBefore(draggedTile, before ? a : a.nextSibling);
+    });
+
+    a.addEventListener('drop', (e) => {
+      e.preventDefault();
+    });
+
+    a.addEventListener('dragend', () => {
+      a.classList.remove('dragging');
+      draggedTile = null;
+      // persist whatever order is now in the DOM
+      const newOrder = Array.from(grid.children)
+        .map(el => links.find(l => l.id === el.dataset.id))
+        .filter(Boolean);
+      if (newOrder.length === links.length) {
+        links = newOrder;
+        storageSet('links', links);
+      }
+    });
 
     const dot = document.createElement('span');
     dot.className = 'dot';
@@ -261,7 +336,7 @@ function renderLinks() {
       e.stopPropagation();
       closeAllMenus();
       links = links.filter(l => l.id !== link.id);
-      save('devdash_links', links);
+      storageSet('links', links);
       renderLinks();
     });
 
@@ -271,6 +346,10 @@ function renderLinks() {
 }
 
 document.addEventListener('click', closeAllMenus);
+
+const linksGrid = document.getElementById('links-grid');
+linksGrid.addEventListener('dragover', (e) => e.preventDefault());
+linksGrid.addEventListener('drop', (e) => e.preventDefault());
 
 /* ---- add / edit modal ---- */
 
@@ -282,11 +361,11 @@ const linkModalCancel = document.getElementById('link-modal-cancel');
 const linkModalSave = document.getElementById('link-modal-save');
 
 let modalMode = 'add'; // 'add' | 'edit'
-let editingLink = null;
+let editingLinkId = null;
 
 function openLinkModal(mode, link) {
   modalMode = mode;
-  editingLink = link || null;
+  editingLinkId = link ? link.id : null;
   linkModalTitle.textContent = mode === 'edit' ? '// edit shortcut' : '// new shortcut';
   linkNameInput.value = link ? link.label : '';
   linkUrlInput.value = link ? link.url.replace(/^https?:\/\//i, '') : '';
@@ -296,10 +375,13 @@ function openLinkModal(mode, link) {
 
 function closeLinkModal() {
   linkModalOverlay.classList.remove('show');
-  editingLink = null;
+  editingLinkId = null;
 }
 
-document.getElementById('link-add').addEventListener('click', () => openLinkModal('add', null));
+document.getElementById('link-add').addEventListener('click', () => {
+  closeAllMenus();
+  openLinkModal('add', null);
+});
 linkModalCancel.addEventListener('click', closeLinkModal);
 linkModalOverlay.addEventListener('click', (e) => {
   if (e.target === linkModalOverlay) closeLinkModal();
@@ -311,13 +393,16 @@ linkModalSave.addEventListener('click', () => {
   if (!label || !urlRaw) return;
   const url = normalizeUrl(urlRaw);
 
-  if (modalMode === 'edit' && editingLink) {
-    editingLink.label = label;
-    editingLink.url = url;
+  if (modalMode === 'edit' && editingLinkId) {
+    const target = links.find(l => l.id === editingLinkId);
+    if (target) {
+      target.label = label;
+      target.url = url;
+    }
   } else {
     links.push({ id: uid(), label, url });
   }
-  save('devdash_links', links);
+  storageSet('links', links);
   renderLinks();
   closeLinkModal();
 });
@@ -333,4 +418,44 @@ linkModalSave.addEventListener('click', () => {
   });
 });
 
-renderLinks();
+
+/* ---------------- INIT + LIVE CROSS-TAB SYNC ---------------- */
+
+const DEFAULT_LINKS = [
+  { id: uid(), label: 'GitHub', url: 'https://github.com' },
+  { id: uid(), label: 'ChatGPT', url: 'https://chatgpt.com' },
+  { id: uid(), label: 'Notion', url: 'https://notion.so' }
+];
+
+const DEFAULT_NOTES = [
+  { id: uid(), text: 'pin important stuff here', color: NOTE_COLORS[0] }
+];
+
+storageGet({ todos: [], notes: DEFAULT_NOTES, links: DEFAULT_LINKS }).then(data => {
+  todos = data.todos || [];
+  notes = data.notes || [];
+  links = data.links || [];
+  backfillNoteColors();
+  renderTodos();
+  renderNotes();
+  renderLinks();
+});
+
+if (hasChromeStorage) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.todos) {
+      todos = changes.todos.newValue || [];
+      renderTodos();
+    }
+    if (changes.notes) {
+      notes = changes.notes.newValue || [];
+      backfillNoteColors();
+      renderNotes();
+    }
+    if (changes.links) {
+      links = changes.links.newValue || [];
+      renderLinks();
+    }
+  });
+}
